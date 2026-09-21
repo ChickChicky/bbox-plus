@@ -1,0 +1,10 @@
+{
+  "domain": "bboxplus",
+  "name": "Bbox Plus",
+  "codeowners": ["@ChickChicky"],
+  "config_flow": false,
+  "dependencies": ["network"],
+  "iot_class": "local_polling",
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

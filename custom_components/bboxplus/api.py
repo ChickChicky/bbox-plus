@@ -9,6 +9,8 @@ from typing import Any, Callable, Literal, TypeVar
 from urllib.parse import urljoin, quote
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_address, ip_network, _BaseAddress, _BaseNetwork
 
+# TODO: Add per-port stats
+
 T = TypeVar('T')
 def extract( d: dict, k: str, cb: Callable[[Any], T] ) -> T:
     if not isinstance(d, dict):
@@ -19,6 +21,9 @@ def extract( d: dict, k: str, cb: Callable[[Any], T] ) -> T:
         return cb(d[k])
     except BaseException as e:
         raise ValueError('failed to parse %r (%r)'%(k, d[k])) from e
+
+class HTTPError( BaseException ):
+    pass
 
 @dataclass
 class Bandwidth:
@@ -72,7 +77,7 @@ class LinkStatus:
         )
 
 @dataclass
-class WANBandwidth( Bandwidth ):
+class WanBandwidth( Bandwidth ):
     packetserrors: int
     packetsdiscards: int
     occupation: int
@@ -80,8 +85,8 @@ class WANBandwidth( Bandwidth ):
     contractualBandwidth: int
 
     @staticmethod
-    def from_dict( value: dict ) -> WANBandwidth:
-        return WANBandwidth(
+    def from_dict( value: dict ) -> WanBandwidth:
+        return WanBandwidth(
             bandwidth = extract(value, 'bandwidth', int),
             bytes = extract(value, 'bytes', int),
             packets = extract(value, 'packets', int),
@@ -93,15 +98,15 @@ class WANBandwidth( Bandwidth ):
         )
 
 @dataclass
-class WANStats:
-    rx: WANBandwidth
-    tx: WANBandwidth
+class WanStats:
+    rx: WanBandwidth
+    tx: WanBandwidth
 
     @staticmethod
-    def from_dict( value: dict ) -> WANStats:
-        return WANStats(
-            rx = extract(value, 'rx', WANBandwidth.from_dict),
-            tx = extract(value, 'tx', WANBandwidth.from_dict)
+    def from_dict( value: dict ) -> WanStats:
+        return WanStats(
+            rx = extract(value, 'rx', WanBandwidth.from_dict),
+            tx = extract(value, 'tx', WanBandwidth.from_dict)
         )
 
 @dataclass
@@ -189,48 +194,51 @@ class DeviceInfo:
         )
 
 @dataclass
-class WANInternetInfo:
+class WanInternetInfo:
     state: int
 
     @staticmethod
-    def from_dict( value: dict ) -> WANInternetInfo:
-        return WANInternetInfo(state = extract(value, 'state', int))
+    def from_dict( value: dict ) -> WanInternetInfo:
+        return WanInternetInfo(state = extract(value, 'state', int))
 
 @dataclass
-class WANInterfaceInfo:
+class WanInterfaceInfo:
     id: int
     default: int
     state: int
 
     @staticmethod
-    def from_dict( value: dict ) -> WANInterfaceInfo:
-        return WANInterfaceInfo(
+    def from_dict( value: dict ) -> WanInterfaceInfo:
+        return WanInterfaceInfo(
             id = extract(value, 'id', int),
             default = extract(value, 'default', int),
             state = extract(value, 'state', int)
         )
 
 @dataclass
-class WANIP6BaseInfo:
+class IpInfo:
     status: str
     valid: datetime
     preferred: datetime
 
     @staticmethod
-    def from_dict( value: dict ) -> WANIP6BaseInfo:
-        return WANIP6BaseInfo(
+    def from_dict( value: dict ) -> IpInfo:
+        return IpInfo(
             status = extract(value, 'status', str),
             valid = extract(value, 'valid', isoparse),
             preferred = extract(value, 'preferred', isoparse),
         )
 
 @dataclass
-class WANIP6AddressInfo( WANIP6BaseInfo ):
+class BoundIp6AddressInfo( IpInfo ):
     ipaddress: IPv6Address
+    status: str
+    valid: datetime
+    preferred: datetime
 
     @staticmethod
-    def from_dict( value: dict ) -> WANIP6AddressInfo:
-        return WANIP6AddressInfo(
+    def from_dict( value: dict ) -> BoundIp6AddressInfo:
+        return BoundIp6AddressInfo(
             ipaddress = extract(value, 'ipaddress', IPv6Address),
             status = extract(value, 'status', str),
             valid = extract(value, 'valid', isoparse),
@@ -238,12 +246,15 @@ class WANIP6AddressInfo( WANIP6BaseInfo ):
         )
 
 @dataclass
-class WANIP6PrefixInfo( WANIP6BaseInfo ):
+class BoundIp6PrefixInfo( IpInfo ):
     prefix: IPv6Network
+    status: str
+    valid: datetime
+    preferred: datetime
 
     @staticmethod
-    def from_dict( value: dict ) -> WANIP6PrefixInfo:
-        return WANIP6PrefixInfo(
+    def from_dict( value: dict ) -> BoundIp6PrefixInfo:
+        return BoundIp6PrefixInfo(
             prefix = extract(value, 'prefix', IPv6Network),
             status = extract(value, 'status', str),
             valid = extract(value, 'valid', isoparse),
@@ -251,7 +262,33 @@ class WANIP6PrefixInfo( WANIP6BaseInfo ):
         )
 
 @dataclass
-class WANIPInfo:
+class WanIP6AddressInfo( IpInfo ):
+    ipaddress: IPv6Address
+
+    @staticmethod
+    def from_dict( value: dict ) -> WanIP6AddressInfo:
+        return WanIP6AddressInfo(
+            ipaddress = extract(value, 'ipaddress', IPv6Address),
+            status = extract(value, 'status', str),
+            valid = extract(value, 'valid', isoparse),
+            preferred = extract(value, 'preferred', isoparse),
+        )
+
+@dataclass
+class WanIp6PrefixInfo( IpInfo ):
+    prefix: IPv6Network
+
+    @staticmethod
+    def from_dict( value: dict ) -> WanIp6PrefixInfo:
+        return WanIp6PrefixInfo(
+            prefix = extract(value, 'prefix', IPv6Network),
+            status = extract(value, 'status', str),
+            valid = extract(value, 'valid', isoparse),
+            preferred = extract(value, 'preferred', isoparse),
+        )
+
+@dataclass
+class WanIpInfo:
     address: IPv4Address
     cgnatenable: bool
     maptenable: bool
@@ -261,14 +298,14 @@ class WANIPInfo:
     subnet: IPv4Network
     dnsserversv6: tuple[IPv6Address, ...]
     ip6state: Literal['Up', 'Down']
-    ip6address: tuple[WANIP6AddressInfo, ...]
-    ip6prefix: tuple[WANIP6PrefixInfo, ...]
+    ip6address: tuple[WanIP6AddressInfo, ...]
+    ip6prefix: tuple[WanIp6PrefixInfo, ...]
     mac: str
     mtu: int
 
     @staticmethod
-    def from_dict( value: dict ) -> WANIPInfo:
-        return WANIPInfo(
+    def from_dict( value: dict ) -> WanIpInfo:
+        return WanIpInfo(
             address = extract(value, 'address', IPv4Address),
             cgnatenable = extract(value, 'cgnatenable', bool),
             maptenable = extract(value, 'maptenable', bool),
@@ -278,31 +315,101 @@ class WANIPInfo:
             subnet = extract(value, 'subnet', IPv4Network),
             dnsserversv6 = extract(value, 'dnsserversv6', lambda l: tuple(IPv6Address(it) for it in l.split(','))),
             ip6state = extract(value, 'ip6state', str), # TODO: Ensure part of enum (+ verify possible values) # pyright: ignore[reportArgumentType]
-            ip6address = extract(value, 'ip6address', lambda l: tuple(WANIP6AddressInfo.from_dict(it) for it in l)),
-            ip6prefix = extract(value, 'ip6prefix', lambda l: tuple(WANIP6PrefixInfo.from_dict(it) for it in l)),
+            ip6address = extract(value, 'ip6address', lambda l: tuple(WanIP6AddressInfo.from_dict(it) for it in l)),
+            ip6prefix = extract(value, 'ip6prefix', lambda l: tuple(WanIp6PrefixInfo.from_dict(it) for it in l)),
             mac = extract(value, 'mac', str),
             mtu = extract(value, 'mtu', int),
         )
 
 @dataclass
-class WANInfo:
-    internet: WANInternetInfo
-    interface: WANInterfaceInfo
-    ip: WANIPInfo
+class WanInfo:
+    internet: WanInternetInfo
+    interface: WanInterfaceInfo
+    ip: WanIpInfo
     link: LinkStatus
 
     @staticmethod
-    def from_dict( value: dict ) -> WANInfo:
-        return WANInfo(
-            internet = extract(value, 'internet', WANInternetInfo.from_dict),
-            interface = extract(value, 'interface', WANInterfaceInfo.from_dict),
-            ip = extract(value, 'ip', WANIPInfo.from_dict),
+    def from_dict( value: dict ) -> WanInfo:
+        return WanInfo(
+            internet = extract(value, 'internet', WanInternetInfo.from_dict),
+            interface = extract(value, 'interface', WanInterfaceInfo.from_dict),
+            ip = extract(value, 'ip', WanIpInfo.from_dict),
             link = extract(value, 'link', LinkStatus.from_dict)
         )
 
-class HTTPError( BaseException ):
-    pass
+@dataclass
+class LanIpInfo:
+    state: Literal['Up', 'Down']
+    mtu: int
+    ipaddress: IPv4Address
+    ip6enable: bool
+    ip6enableGlobal: bool
+    ip6state: Literal['Up', 'Down']
+    ip6address: tuple[BoundIp6AddressInfo, ...]
+    ip6prefix: tuple[BoundIp6PrefixInfo, ...]
+    netmask: IPv4Network
+    mac: str
+    hostname: str
+    domain: str
+    aliases: tuple[str, ...]
 
+    @staticmethod
+    def from_dict( value: dict ) -> LanIpInfo:
+        return LanIpInfo(
+            state = extract(value, 'state', str), # TODO: Ensure part of enum (+ verify possible values) # pyright: ignore[reportArgumentType]
+            mtu = extract(value, 'mtu', int),
+            ipaddress = extract(value, 'ipaddress', IPv4Address),
+            ip6enable = extract(value, 'ip6enable', bool),
+            ip6enableGlobal = extract(value, 'ip6enableGlobal', bool),
+            ip6state = extract(value, 'ip6state', str), # TODO: Ensure part of enum (+ verify possible values) # pyright: ignore[reportArgumentType]
+            ip6address = extract(value, 'ip6address', lambda l: tuple(BoundIp6AddressInfo.from_dict(it) for it in l)),
+            ip6prefix = extract(value, 'ip6prefix', lambda l: tuple(BoundIp6PrefixInfo.from_dict(it) for it in l)),
+            netmask = extract(value, 'netmask', IPv4Network),
+            mac = extract(value, 'mac', str),
+            hostname = extract(value, 'hostname', str),
+            domain = extract(value, 'domain', str),
+            aliases = extract(value, 'aliases', lambda l: tuple(l.split(',')))
+        )
+
+@dataclass
+class LanPortInfo:
+    id: int
+    state: Literal['Up', 'Down']
+    link_mode: str
+    blocked: bool
+    flickering: bool
+
+    @staticmethod
+    def from_dict( value: dict ) -> LanPortInfo:
+        return LanPortInfo(
+            id = extract(value, 'id', int),
+            state = extract(value, 'state', str), # TODO: Ensure part of enum (+ verify possible values) # pyright: ignore[reportArgumentType]
+            link_mode = extract(value, 'link_mode', str),
+            blocked = extract(value, 'blocked', bool),
+            flickering = extract(value, 'flickering', bool),
+        )
+
+@dataclass
+class LanSwitchInfo:
+    ports: tuple[LanPortInfo, ...]
+
+    @staticmethod
+    def from_dict( value: dict ) -> LanSwitchInfo:
+        return LanSwitchInfo(ports = extract(value, 'ports', lambda l: tuple(LanPortInfo.from_dict(it) for it in l)))
+
+@dataclass
+class LanInfo:
+    ip: LanIpInfo
+    switch: LanSwitchInfo
+
+    @staticmethod
+    def from_dict( value: dict ) -> LanInfo:
+        return LanInfo(
+            ip = extract(value, 'ip', LanIpInfo.from_dict),
+            switch = extract(value, 'switch', LanSwitchInfo.from_dict)
+        )
+
+@cached(TTLCache(10, 1))
 def request( *path: str, at: tuple[str, ...]|None = None ):
     url = urljoin('http://192.168.1.254/api/v1/', '/'.join(quote(it, safe='') for it in path))
     res = get(url)
@@ -319,12 +426,16 @@ def request( *path: str, at: tuple[str, ...]|None = None ):
     return val
 
 @cached(TTLCache(1, 60))
-def get_wan_info() -> WANInfo:
-    return WANInfo.from_dict(request('wan', 'ip', at=('wan',)))
+def get_wan_info() -> WanInfo:
+    return WanInfo.from_dict(request('wan', 'ip', at=('wan',)))
 
 @cached(TTLCache(1, 60))
-def get_wan_stats() -> WANStats:
-    return WANStats.from_dict(request('wan', 'ip', 'stats'))
+def get_wan_stats() -> WanStats:
+    return WanStats.from_dict(request('wan', 'ip', 'stats'))
+
+@cached(TTLCache(1, 120))
+def get_lan_info() -> LanInfo:
+    return LanInfo.from_dict(request('lan', 'ip', at=('lan',)))
 
 @cached(TTLCache(1, 5))
 def get_device() -> DeviceInfo:

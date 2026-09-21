@@ -25,7 +25,7 @@ from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-from .api import get_device, get_wan_info, get_wan_stats
+from .api import get_device, get_lan_info, get_wan_info, get_wan_stats
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,7 +129,6 @@ SENSOR_DESCS: tuple[SensorEntityDescription, ...] = (
         name="Uptime",
         # device_class=SensorDeviceClass.UPTIME, # TODO: Zas ist bad
         native_unit_of_measurement=UnitOfTime.SECONDS,
-        suggested_unit_of_measurement=UnitOfTime.DAYS,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:progress-clock",
     ),
@@ -187,6 +186,7 @@ class BboxBinarySensor(BinarySensorEntity):
         """Initialize the sensor."""
         self.entity_description = description
         self._attr_name = f"{name} {description.name}"
+        self._attr_unique_id = f'bbox_{get_lan_info().ip.mac.replace(':','')}-{description.key}'
 
     def update(self) -> None:
         """Get the latest data from Bbox and update the state."""
@@ -212,6 +212,7 @@ class BboxSensor(SensorEntity):
         """Initialize the sensor."""
         self.entity_description = description
         self._attr_name = f"{name} {description.name}"
+        self._attr_unique_id = f'bbox_{get_lan_info().ip.mac.replace(':','')}-{description.key}'
 
     def update(self) -> None:
         """Get the latest data from Bbox and update the state."""
